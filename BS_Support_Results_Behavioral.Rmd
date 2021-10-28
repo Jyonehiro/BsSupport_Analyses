@@ -1,0 +1,251 @@
+---
+title: "BS-Support Results"
+author: "Jade Yonehiro"
+contact: "Jnyonehiro@ucdavis.edu"
+date: "May 2020"
+output:
+  html_document:
+    theme: cosmo
+    df_print: paged
+    highlight: breezedark
+    toc: true
+    toc_float: true
+    toc_depth: 2
+    code_folding: hide
+    code_download: true
+---
+
+```{r setup, message = FALSE, include=FALSE}
+library(readr)       # read_csv()
+library(dplyr)       # data wrangling -> mutate()
+library(tidyr)       # data wrangling -> unnest()
+library(ggplot2)     # plotting 
+library(png)         # adding img to ggplot
+library(grid)        # plotting
+library(ggpubr)      # plotting
+library(kableExtra)  # making tables
+library(knitr)
+library(lmSupport)
+library(lme4)
+library(lmerTest)
+library(car)         # Needed for McSummary()
+source('http://psych.colorado.edu/~jclab/R/mcSummaryLm.R')
+```
+
+```{r setup DataFiles, message = FALSE}
+# Load Aggregated Data File
+## PC Pathway
+dfAgg = read.delim("C:/Users/Jade/Dropbox/0_Studies/1_InhibCtrl2019/0_Analyses/2020_MotionTracking/202005_AggregateData_BsSupport.csv",sep=",", header = TRUE)
+## Mac Pathway
+#dfAgg = read.delim("~/Dropbox/0_Studies/1_InhibCtrl2019/0_Analyses//2020_MotionTracking/202005_AggregateData_BsSupport.csv",sep=",", header = TRUE)
+
+# Set theme for plotting
+mytheme <-theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+          panel.background = element_blank(), axis.line = element_line(colour = "black"))
+```
+
+# Accuracy {.tabset .tabset-pills}
+***
+```{r}
+# set up data frame for analysis
+dfAcc<-dfAgg%>%
+  group_by(part_id, cueDum, cueContrast, tType, ageRound)%>%
+  summarise(MuACC = mean(acc, rm.na=T))%>%                                
+  ungroup()
+```
+
+## Accuracy across All trial types
+<p style="font-weight:400; font-size:20px">Question</p>
+Overall, did accuracy differ between the two conditions (Cue v. No-Cue) and across age (3-7)?  
+
+  $\bar{ACC_i}= \beta_0+\beta_1Age_i+\beta_2Condition_i+\beta_3TrialType_i+...\beta_7Age*Condition_i*TrialType+\epsilon_i$ 
+
+<p style="font-weight:400; font-size:20px">Results</p>
+ - **Age:** Age (3-7) was a significant predictor of accuracy *across trial types* (p<.001). Children's accuracy increased with age.    
+ - **Condition:** *Not Significant* 
+ - **Trial Type:** Trial type (Go v. No-Go) was a significant predictor of accuracy *across trial types* (p=.013). Accuracy was higher on Go trials than on No-go trials.  
+ - **No Significant interactions**
+```{r}
+AccCont<-lm(MuACC ~ ageRound + cueContrast + tType + ageRound*tType*cueContrast, dfAcc)
+mcSummary(AccCont)
+```
+***
+
+## Accuracy on GO trials.
+<p style="font-weight:400; font-size:20px">Question</p>
+Did accuracy differ between the two conditions (Cue v.No-Cue) and across ages (3-7)in the GO trials?
+
+  $\bar{GOACC_i}= \beta_0+\beta_1Age_i+\beta_2Condition_i+\beta_3Age*Condition_i+\epsilon_i$ 
+
+<p style="font-weight:400; font-size:20px">Results</p>
+ - **Age:**  Age (3-7) was a significant predictor of accuracy on GO trials (p=.013). Children’s accuracy increased with age.  
+ - **Condition:** *Not Significant*  
+ - **Interaction:** *Not Significant*   
+```{r}
+AccContGO<-lm(MuACC ~ ageRound + cueDum + ageRound*cueDum, dfAcc, subset = tType == 0.5)
+mcSummary(AccContGO)
+```
+***
+
+## Accuracy on NO-GO trials
+<p style="font-weight:400; font-size:20px">Question.</p>
+Did accuracy differ between the two conditions (Cue v. No-Cue) and across ages (3-7) in the **NO-GO trials**?
+
+  $\bar{NOGOACC_i}= \beta_0+\beta_1Age_i+\beta_2Condition_i+\beta_3Age*Condition_i+\epsilon_i$ 
+
+<p style="font-weight:400; font-size:20px">Results</p>
+ - **Age:** Age (3-7) was a significant predictor of accuracy on No-Go trials (p=.045). Children’s accuracy increased with age.  
+ - **Condition:** *Not Significant* 
+ - **Interaction:** *Not Significant* 
+```{r}
+AccContNOGO<-lm(MuACC ~ ageRound + cueDum + ageRound*cueDum, dfAcc, subset = tType == -0.5)
+mcSummary(AccContNOGO)
+```
+***
+
+## Visualizations & Summary
+<p style="font-weight:400; font-size:20px">Accuracy Results Summary</p>
+
+- Across these analyses, age was a consistent predictor of children's accuracy on the box-search task. We found that accuracy increased as age increased in both Go and No-go trials. We did not find any effect of condition on children's accuacy.  
+- Children's accuracy was overall very high (average accuracy ranged from 84% - 99%).   
+
+```{r}
+dfAccplot<-dfAgg%>%
+  ungroup()%>%
+  mutate(cueDum=as.factor(cueDum), 
+         tType = factor(tType, levels=c(-.5,.5),labels=c("NoGo","Go")))%>%
+  filter(!is.na(ageRound), !is.na(acc), !is.na(tType))%>%
+  group_by(ageRound, tType, cueDum)%>% 
+  summarise(mean = mean(acc, na.rm=TRUE),
+            se = sd(acc)/sqrt(length(acc)))%>% 
+  ungroup()%>%
+  mutate(age = ifelse(ageRound==3, '3 (n=18)',
+                   ifelse(ageRound==4, '4 (n=37)',
+                       ifelse(ageRound==5, '5 (n=44)',
+                           ifelse(ageRound==6, '6 (n=27)',
+                                ifelse(ageRound==7, '7 (n=26)', NA))))))
+
+PlotACC <- ggplot(dfAccplot, aes(age, mean, fill=cueDum)) + 
+    geom_bar(stat = "identity",position=position_dodge(),color="black", size=.3) + 
+    scale_fill_manual(name="Condition",labels = c("No-Cue", "Cue"),values=c("#4F9CC4", "#e8b63f")) +
+    ggtitle("Accuracy by Age and Condition") +
+    geom_errorbar(aes(ymin=mean-se, ymax=mean + se), width=.2,
+                  position=position_dodge(.9)) + 
+    mytheme+
+    ylab("Accuracy")+
+    xlab("Age")+
+    facet_wrap(~tType)
+PlotACC 
+
+```
+
+### Summary Stats  
+
+```{r, echo=F}
+# Summary Stats without trial type break down available in older script versions
+dfSum2<-dfAgg%>%
+  ungroup()%>%
+  mutate(cueDum=as.factor(cueDum), 
+         tType = factor(tType, levels=c(-.5,.5),labels=c("NoGo","Go")))%>%
+  filter(!is.na(ageRound), !is.na(acc), !is.na(tType))%>%
+  group_by(ageRound, cueDum, tType)%>% 
+  summarise(mean = mean(acc, na.rm=TRUE),
+            se = sd(acc)/sqrt(length(acc)))%>% 
+  ungroup()%>%
+  mutate(cueDum = ifelse(cueDum==0, 'No Cue',
+                    ifelse(cueDum==1, 'Cue',NA)))%>%
+  rename(Age = ageRound,
+         'Trial Type' = tType,
+         'Mean Accuracy' = mean,
+         'Accuracy se' = se
+          )
+
+kable(dfSum2, caption = "Age x Cue Condition x Trial Type") %>%
+  kable_styling(bootstrap_options = "striped", full_width = F, position="left")
+```
+***
+
+# Response Time {.tabset .tabset-pills}
+```{r}
+dfRT<-dfAgg%>%
+  group_by(part_id, ageRound, cueDum, tType, acc)%>%
+  summarise(MuRT = mean(reachRT))%>%
+  ungroup()
+```
+<span style="text-decoration:underline">**NOTES**</span>    
+- We can only look at response times for accurate Go trials and inaccurate No-Go trials  
+- Inaccurate Go trials and Accurate No-Go trials time out, so there is no time stamp for when they opened the box. Since reach response times are calculated as $(Box Open Time)-(Stim Presentation Time)$ these trials have a 0 value (or could be replaced with MAX reach time possible)
+
+## Response times on accurate GO trials
+
+<p style="font-weight:400; font-size:20px">Question</p>
+Did response times differ between the two conditions (Cue v. No-Cue) and across ages (3-7) in the GO trials?  
+
+  $\bar{GORT_i}= \beta_0+\beta_1Age_i+\beta_2Condition_i+\beta_3Age*Condition_i+\epsilon_i$ 
+
+<p style="font-weight:400; font-size:20px">Results</p>
+ - **Age:** Age (3-7) was a significant predictor of response times on accurate Go trials (p=0.12). Children's response times decreased with age.    
+ - **Condition:** Condition (Cue v. No Cue) was a significant predictor of response times on accurate Go trials (p=.026). Children's response times were slower in the Cued condition than in the No Cue condition.  
+ - **Interaction:** *Not Significant* 
+```{r}
+RTContGO<-lm(MuRT ~ ageRound + cueDum + ageRound*cueDum, dfRT, subset = tType == 0.5 & acc==1)
+mcSummary(RTContGO)
+```
+***
+
+## Response times on inaccurate NO-GO trials
+
+<p style="font-weight:400; font-size:20px">Question</p>
+Did response times differ between the two conditions (Cue v. No-Cue) and across ages (3-7) in the GO trials?
+
+  $\bar{NOGORT_i}= \beta_0+\beta_1Age_i+\beta_2Condition_i+\beta_3Age*Condition_i+\epsilon_i$   
+  
+<p style="font-weight:400; font-size:20px">Results</p>
+ - **Age:** Age (3-7) was a significant predictor of response times on inaccurate No-Go trials (p=.011). Children's response times decreased with age.    
+ - **Condition:** *Not Significant*   
+ - **Interaction:** *Not Significant* 
+```{r}
+RTContNOGO<-lm(MuRT ~ ageRound + cueDum + ageRound*cueDum, dfRT, subset = tType == -0.5 & acc==0)
+mcSummary(RTContNOGO)
+```
+***
+
+## Visualizations & Summary
+
+<p style="font-weight:400; font-size:20px">Response Time Results Summary</p>
+
+- Across these analyses, age was a consistent predictor of children's response times on the box-search task (Accuracte Go trials and inaccurate No-go trials only). We found that response times decreased with age in both Go and No-go trials. We found that condition was a significant predictor of response times on accurate Go trials. Children's Go trial response times were slower in the Cue condition than in the No-cue conditin.w
+```{r}
+dfplot<-dfAgg%>%
+  mutate(cueDum = as.factor(cueDum), 
+         tType = factor(tType, levels=c(-.5,.5),labels=c("NoGo","Go"))) %>%
+  filter(!is.na(ageRound), !is.na(reachRT), !is.na(tType)) %>%
+  group_by(ageRound, tType, cueDum) %>% 
+  summarise(mean = mean(reachRT, na.rm=TRUE),
+            se = sd(reachRT)/sqrt(length(reachRT)))%>%
+  ungroup()%>%
+  mutate(age = ifelse(ageRound==3, '3 (n=18)',
+                    ifelse(ageRound==4, '4 (n=37)',
+                        ifelse(ageRound==5, '5 (n=44)',
+                            ifelse(ageRound==6, '6 (n=27)',
+                                 ifelse(ageRound==7, '7 (n=26)', NA))))))
+
+PlotRT<-ggplot(dfplot,aes(age, mean, fill=cueDum)) + 
+    geom_bar(stat = "identity",position=position_dodge(),color="black", size=.3) + 
+    scale_fill_manual(name="Condition",labels = c("No-Cue", "Cue"),values=c("#4F9CC4", "#e8b63f")) +
+    geom_errorbar(aes(ymin=mean-se, ymax=mean + se), width=.2,
+                  position=position_dodge(.9)) + 
+    ggtitle("Response Times by Age and Condition") +
+    mytheme+
+    ylab("Response Time")+
+    xlab("Age")+
+    facet_wrap(~tType)
+
+ PlotRT
+```
+
+***
+
+5yos only Response Times available in older script versions
+
+***
