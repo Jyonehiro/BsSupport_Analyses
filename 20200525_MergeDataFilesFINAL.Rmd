@@ -1,0 +1,554 @@
+---
+title: "BS-Support Data Cleaning"
+author: "Jade Yonehiro"
+contact: "Jnyonehiro@ucdavis.edu"
+date: "Spring 2020"
+output:
+  html_document:
+    theme: cosmo
+    highlight: breezedark
+    toc: true
+    toc_float: true
+    toc_depth: 2
+    code_download: true
+---
+- This script processes and prepares all data from the 2019-2020 Box search support task   
+- The Rmd for this html can be downloaded by clicking the caret in the 'Code' box in the upper right-hand corner of the document. 
+```{r message=FALSE, warning=FALSE}
+library(readr)     # read_csv()
+library(plyr)
+library(dplyr)     # data wrangling (mutate())
+library(tidyr)     # data wrangling (unnest())
+library(tidyverse) # data wrangling
+library(purrr)     # map(), reduce()
+library(ggplot2)   # plots & required for eeptools
+library(lubridate) # age calculations, new approach
+library(stringr)   # substr()
+library(kableExtra)# make html tables
+library(htmltools)
+```
+
+
+```{r message=FALSE, warning=FALSE, include=FALSE, paged.print=FALSE}
+### Merge motion data files ###
+# PC pathway to participant files
+data_path <- "C:/Users/Jade/Dropbox/0_Studies/1_InhibCtrl2019/0_Analyses/2020_MotionTracking/Data/BSsupport_MotionData_2019"
+
+# Merge all files
+files <- dir(data_path, pattern = "*.csv")                     # get file name
+df <- files %>%
+  map(~ read_csv(file.path(data_path, .,na.strings=".")))%>%   # read in all the files, appending the path before the filename
+  reduce(rbind)%>%
+  filter(blockType == 'real',                                  # Remove practice trials
+        HBMoveTime ==0)%>%
+  group_by(part_id, trialNum)%>%                               # Create a variable to mainain the ordering of observations 
+  mutate(id = row_number())%>%
+  ungroup()
+
+
+### Merge trial level data files ###
+data_path <- "C:/Users/Jade/Dropbox/0_Studies/1_InhibCtrl2019/0_Analyses/2020_MotionTracking/Data/BSsupport_TrialLevelData_2019"
+
+# Merge all files
+files2 <- dir(data_path, pattern = "*.csv")                    # get file names
+df2 <- files2 %>%
+  map(~ read_csv(file.path(data_path, .,na.strings=".")))%>%   # read in all the files, appending the path before the filename
+  reduce(rbind)%>% 
+         # Fix part_id variable so dfs can be merged
+  mutate(part_id = as.numeric(part_id))%>%
+  filter(Notes == 0,                                           # Remove session notes
+         blockType == 'real'                                   # Remove practice trials
+         )
+  
+### Get date of participation so we can calculate exact ages ###
+dfDoP = read.delim("C:/Users/Jade/Dropbox/0_Studies/1_InhibCtrl2019/0_Analyses/2020_MotionTracking/Data/DOP_BS_Support.csv",sep=",", header = TRUE)
+
+### Combine data sets ###
+dfMerged = full_join(df,df2, by = c("part_id","blockType",     # Trial by Trial (TbT) df
+                                    "trialType","blockNum",
+                                    "trialNum"))
+
+dfMergedTbT = full_join(dfMerged,dfDoP, by = "part_id")
+
+dfAgg<- full_join(df2,dfDoP, by = "part_id")                   # Aggregated df
+```
+
+# Fix current variables
+```{r}
+
+makeNumeric<-function(x)(x=as.numeric(x))                      # Streamline variable conversion (to numeric)
+makeMS<-function(x)(x=(x*1000))                                # Streamline variable conversion (to milliseconds)
+makeFactor<-function(x)(x=as.factor(x)) 
+
+dfMergedTbT<-dfMergedTbT%>%                                    # If this is placed after the Cleanup function, the code does not work. Something blocks the rename function
+  rename(dob = dob.x, gender = gender.x, cond = cond.x)%>%
+  mutate(MoveTime = as.numeric(X14))%>%
+  select(-c(dob.y, gender.y, cond.y, X5.x, X5.y, exp.x, exp.y, X14))%>%
+  mutate_at(c("MoveTime"),makeMS)
+
+Cleanup<-function(df)(df<-df%>%
+                        # Remove dropped participants
+                        filter(part_id != 'part_id',
+                               !part_id %in% c(1003,1022,1044,1054,1055,1056,1060,1106,     # Remove fuss outs
+                                               1119,1129,1144,1181,1183,1186,1188, 1170),   # con't
+                               !part_id %in% c(1011,1020,1048,1067,1083,1098,1108,1116,     # Remove failed comp checks
+                                               1132),                                       # con't
+                               !part_id %in% c(1085,1147,1162,1185),                        # Remove parent interference/parent gave wrong age
+                               !part_id %in% c(1005,1010,1012,1015,1018,1019,1024,1033,     # Remove incorrectly consented participants
+                                               1097,1126,1127,1178),                        # con't
+                               # Some ID #s were mistaken assigned to research-toy participants
+                               !part_id %in% c(1036,1039,1040,1045,1046,1060,1066)          # Remove research toy participants given an id #
+                               ))%>%
+                         mutate_at(c("trialNum","blockNum","acc","reachRT","touchRT",       # Make variables numeric
+                                   "SlideExit","StimTime"),makeNumeric)%>%                  # con't
+                         mutate_at(c("StimTime","touchRT","reachRT",                        # convert seconds to milliseconds
+                                   "SlideExit"),makeMS)%>%                                  # Streamline variable conversion (to factor)
+                         mutate(dob = as.Date(as.character(dob),format="%m/%d/%Y"),         # Convert date of birth format 
+                                dop = as.Date(as.character(DOP),format="%m/%d/%Y"),         # Convert date of participation format
+                               
+                               # Create a coding scheme which identifies which box is being opened on a given trial
+                               boxNum = ifelse(trialNum %in% c(1,5,9,13,17,21,25,29,33,37), 1,         
+                                                 ifelse(trialNum%in% c(2,6,10,14,18,22,26,30,34,38), 2,       
+                                                        ifelse(trialNum%in%c(3,7,11,15,19,23,27,31,35,39), 3,    
+                                                               ifelse(trialNum%in%c(4,8,12,16,20,24,28,32,36,40), 4,  
+                                       NA )))),
+                              
+                               # Create contrast codes for trial type (Go v. No-Go)
+                               tType = ifelse( trialType == "Go", 1/2,
+                                                  ifelse( trialType == "No-Go", -1/2, NA )),
+                              
+                               # Create dummy codes for cue condition (Cue highlight v. No Cue highlight)
+                               cueDum = ifelse( cond == "CHL", 1,
+                                                  ifelse( cond == "NCHL",  0,  NA )),
+                              
+                               # Create contrast codes for cue condition (Cue highlight v. No Cue highlight)
+                               cueContrast = ifelse( cond == "CHL", 1/2,
+                                                       ifelse( cond == "NCHL",  -1/2,  NA )),
+                         )
+
+# Clean up the data frames
+dfMergedTbT<-Cleanup(dfMergedTbT)%>%
+  select(-c(DOP))
+
+dfAgg2<-Cleanup(dfAgg)%>%
+  select(-c(DOP))%>%
+   filter(!is.na(acc))
+```
+
+## Fix coordinate data
+Psychopy output coordinates in '[X Y]' format. We need to make this something useable  
+- Breaking up the data by spaces (' ') isn't possible because there are multiple spaces in the character string  
+- We replace the spaces with 'z'  
+- Next we evalute if the string contains a 'z' in the 1st two characters (e.g., [z###,###] VS [###,###])  
+- If there is a 'z' here, we want to remove it so we can split the column by the 'z' separating the X and Y coordinates  
+  + We also remove the brackets on either side  
+- Next, we break the string by the 1st instance of 'z'   
+  + "extra='merge'" prevents the string from breaking at EVERY instance of 'z'  
+```{r message=FALSE, warning=FALSE}
+dfMergedTbT<- dfMergedTbT%>%                                                         
+  rename(MoveMousePos = MoveMousePosMMoveTime)%>%                                
+  mutate(MoveMousePos = gsub(" ", "z", MoveMousePos),                            # Replace ' ' with 'z' 
+         Eval= str_sub(MoveMousePos, start = 1, end = 2),                        # Figure out if there's a space in the 1st 2 characters
+         Error=str_detect(Eval, "z"),                                            # Tell me if there's a space (marked w/'z') 
+         MoveMousePos2 = 
+           ifelse(Error == "TRUE",                                               # Check 'Error', if Error is 'TRUE'...
+                  substr(MoveMousePos, start=3, stop=nchar(MoveMousePos)-1),     # con't: remove first 2 characters
+           ifelse(Error=="FALSE",                                                # Check 'Error', if Error is 'FALSE'...         
+                  substr(MoveMousePos, 2, nchar(MoveMousePos)-1),                # con't: remove the final character
+                         MoveMousePos)))%>%      
+  separate(MoveMousePos2, into = paste0('MouseMoved', 1:2), sep = "z",           # Break into 2 columns by the 1st 'z'
+           extra="merge")%>%
+  mutate(MouseMoved2 = str_remove_all(MouseMoved2, "[z]"),                       # Remove the 'z' characters we added earlier to divide the string
+         xCoord = as.numeric(as.character(MouseMoved1)),                         # Rename X coordinate variable and make it numeric
+         yCoord = as.numeric(as.character(MouseMoved2)))%>%                      # Rename Y coordinate variable and make it numeric
+  select(-c(MoveMousePos,Eval,Error,MouseMoved1,MouseMoved2))
+```
+
+## Create age variable
+```{r message=FALSE}
+library(intervals)                                                               # Required for age calc but interfers with 'purrr' & merging function
+ageCalc <- function(dob, dop, age.day = dop, 
+                units = "years", floor = FALSE)
+    {
+    calc.age = interval(dob, age.day)/duration(num = 1, units = units)
+    if (floor) return(as.integer(floor(calc.age)))
+    return(calc.age)
+    }
+
+dfMergedTbT$age <- as.numeric(round(ageCalc(dfMergedTbT$dob,dfMergedTbT$dop, units = "years"),2))         # Generate age variable, round to 2 decimals
+dfMergedTbT$ageRound <- as.numeric(ageCalc(dfMergedTbT$dob,dfMergedTbT$dop, units = "years", floor=TRUE)) # round to the year
+
+dfAgg2$age <- as.numeric(round(ageCalc(dfAgg2$dob,dfAgg2$dop, units = "years"),2))         # Generate age variable, round to 2 decimals
+dfAgg2$ageRound <- as.numeric(ageCalc(dfAgg2$dob,dfAgg2$dop, units = "years", floor=TRUE)) # round to the year
+
+detach(package:intervals)                                                        # Remove package (interfers with 'purrr' & merging function)
+```
+
+## Create Distance variables  
+### Identify box locations
+In psychopy the four boxes are programmed to appear at:  
+  - **Box 1**: (-0.625, 0.6)  
+  - **Box 2**: (-0.213, 0.6)  
+  - **Box 3**: (0.213, 0.6)  
+  - **Box 4**: (0.625, 0.6)  
+We want to make sure these are appropriate coordinates to use to calculate distance, so we isolate the max X and Y coordinates (participant X trial number X box number) to see if it matches these values (realizing that trials likely terminated with the mouse not exactly at the center point of the boxes)  
+-Mean coordinates (see below) for each of the boxes are close to those used to program the task, so we will use the coordinates from programming the task to calculate our distance metrics
+```{r eval=FALSE, include=FALSE}
+# Find the locations of the boxes using the accurate trials
+boxlocate <- dfMergedTbT%>%
+  filter(trialType == 'Go',                                                      # Isolate Go trials
+         acc ==1)%>%                                                             # Isolate accurate trials (trials where the boxs were opened)
+  group_by(part_id, trialNum, boxNum)%>%                                         # Group the data 
+  filter(id == max(id))%>%                                                       # Find the final mouse position in the acc trials (should be at box location)
+   summarise(LocateX = xCoord,                                                   # Keep the X and Y coord values in the new data frame            
+             LocateY=yCoord)
+
+summt = dplyr::summarize(group_by(boxlocate, boxNum),                            # Group data by box number (1-4)
+                           X=mean(LocateX, na.rm=T),                             # Find the mean of the X coord values
+                           Y=mean(LocateY, na.rm=T))                             # Find the mean of the Y coord values
+summt
+
+# Find the constant value to use for each of the 4 boxes if children did not leave the safe zone
+## homeEnd= visual.ImageStim(win, image='safeZone.png', pos=(0.262,-0.705))
+DistCalc<- function(X2)
+  {
+  d<-(sqrt((X2-0.262)^2+(0.6-(-0.705))^2)) 
+  print(d)
+  }
+
+Xval<-c(-0.623,-0.213,0.213,0.625)                                               # X values only bc Y is constant for all boxes
+for(i in Xval){DistCalc(i)}                                                      # Calculate distance for each X value
+```
+
+### Calculating distance 
+(*) = JY code double checked (5/12/2020-5/14/2020)    
+- Found an error in the code where dist Accurate Go trials where being set to maxDist instead of 0  
+- Moved dist calculations using szDummy down in the mutate change so it isn't overwritten by the other dist calculation
+```{r}
+dfMergedTbT<-dfMergedTbT%>%
+  mutate(XcoordBox = ifelse(boxNum == 1, -0.625,                                 # Set the X coordinate for Box 1
+                             ifelse(boxNum == 2, -0.213,                         # con't for Box 2
+                                    ifelse(boxNum== 3, 0.213,                    # con't for Box 3
+                                           ifelse(boxNum== 4, 0.625, NA)))),     # con't for Box 4 
+         YcoordBox = 0.6,                                                        # Set the Y coordinate for the boxes (same for all boxes)
+         rawDist = (sqrt((XcoordBox-xCoord)^2+(YcoordBox-yCoord)^2)),            # Calculate the distance for each point from their respective target box (*)
+         maxDist = ifelse(boxNum == 1, 1.576785,                                 # Set the Max distance of the boxes from the Safe Zone
+                          ifelse(boxNum == 2, 1.388758,                          # con't
+                                 ifelse(boxNum == 3, 1.30592,                    # con't
+                                        ifelse(boxNum == 4, 1.354546,0)))),      # con't
+         szDummy = ifelse(yCoord < -0.477, 0, 1),                                # Did the child leave the safe zone on this trial? (*)
+         
+         dist = ifelse(szDummy == 0, maxDist,                                    # If they didn't exceed safeZone threshold, set distance to max dist for that box (*)
+                      ifelse(szDummy == 1, rawDist,rawDist)),                    # If the distance from target exceeds the Max dist, replace it with max dist (*)
+         dist = ifelse(tType == 1/2 & acc == 1, 0,                               # For Go trials where box is opened, set the distance to 0 (i.e., they went all the way)(* changed from maxDist to 0) 
+                      ifelse(tType == -1/2 & acc== 0, 0,                         # For No-go trials where box is opened, set the distance to 0 (i.e., they went all the way)(*)
+                             dist)), 
+         pDist = (dist)/maxDist                                                  # Calculate the proportional distance traveled (distance/the total distance possible)
+        )
+```
+
+### Minimum Distance by Box Number
+We want to know how close participants got to the box on each trial, minDist variable is the smallest distance for each trial. In other words, this variable represents the smallest distance between the mouse/finger location and the box for each trial. Becuase the boxes differ in their distance from the safe Zone (1.577, 1.389, 1.306, & 1.354), we need to check if any of the boxes have a significantly different minDist (esp Box 1, as it has the largest overall distance) which may influence our models
+#### Looking at Average minDist and pDist for the 4 boxes (esp. interested in Box 1 vs. other boxes)(*)
+```{r warning=FALSE}
+dfMergedTbT<-dfMergedTbT%>%
+  filter(rawDist != 'NA')%>%                                                     # Remove NAs, otherwise min calculation will be NAs for smallest dist & pDist
+  group_by(part_id, blockNum, trialNum)%>%                                       # Group the data: participant x trial type x trial Num (*)
+  mutate(minDist = min(dist),                                                    # Find the smallest distance value for each trial (closet point to the box)(*)
+         minPDist = min(pDist))                                                  # Find the smallest value for proportion of distance traveled (*)
+```
+
+### Safe Zone variable
+Our szDummy variable is getting messed up when aggregating.   
+Need to make sure ANY instance within a trial where szDummy = 1 is carried over to the df1 data file.  
+```{r}
+partial<-dfMergedTbT[c('part_id','trialNum','szDummy')]%>%
+  filter(szDummy == 1)%>%                                                       # Keep only instances where children left the safe zone (*)
+  unique()%>%                                                                   # Remove any duplicate trials (*)
+  mutate(szDummyAgg = szDummy)%>%                                               # This variable captures whether the child left the safe zone at any point during a trial (*)
+  select(-szDummy)                                                              # Remove current szDummy variable to allow 'full_join' to write ALL szDummy rows as 1s (*)
+
+dfOtherVariables<-dfMergedTbT%>%                                                # We want to add a couple other variables to the Agg file
+  group_by(part_id,trialNum)%>%
+  summarise(minDist = min(dist),
+            minPDist = min(pDist))%>%
+  ungroup()
+
+  
+dfMergedTbT = full_join(dfMergedTbT, partial, by = c("part_id","trialNum"))%>%  # Combine our data file identifying partial inhibitions with our df1 data frame (*)  
+  mutate(szDummyAgg = replace_na(szDummyAgg, 0))                                # Replace NA's with 0 to indicate trials where children did no leave the safezone (*)
+
+dfAgg2 = full_join(dfAgg2, partial)%>%
+   mutate(szDummyAgg = replace_na(szDummyAgg, 0))                               # Replace NA's with 0 to indicate trials where children did no leave the safezone (*))
+
+dfAgg2 = full_join(dfAgg2, dfOtherVariables)
+```
+
+## Create time, acceleration, and velocity variables
+**NOTE**  
+- In the task script, I reset the MoveTime value to 0 at the end of each trial (novice mistake). Becuase of this, the 1st motion tracking sample for trials where the participant hasn't moved before a sample is taken is set at 0. This is messing up the calculation of 't' (the time elapsed between samples) because it is calculating the time elapsed from 0 to the current time within the entire study duration. Right now I'm just removing these trials because (1) there are enough trials without these trials and (2) I don't know how else to solve this problem.  
+- This section follows the approach from [Leontyev et al., 2018](https://www.frontiersin.org/articles/10.3389/fpsyg.2018.00496/full) for generating time, distance, acceleration, and velocity variables.
+```{r warning=TRUE}
+dfClean<- dfMergedTbT %>%  
+  mutate(t = round(((MoveTime-lag(MoveTime))),2),                               # Create variable t (time); subtract from 1 to normalize (*)         
+         t = as.numeric(t))%>%
+  filter(MoveTime != 0,                                                         # Remove instances where MoveTime Clock was reset to 1 - the 1st sample in a trial
+         t < 100,                                                               # Remove instances where t is miscalculated bc of MoveTime error
+         id != 1)%>%                                                            # Remove 1st trial sample bc of MoveTime Clock issue
+  mutate(alpha = (sqrt((lag(xCoord)-xCoord)^2+(lag(yCoord)-yCoord)^2)),         # Create variable a (*)        
+         alpha = as.numeric(alpha),
+         alpha = replace_na(alpha, 0))%>%
+  group_by(part_id,trialNum)%>%
+  mutate(totalDist = sum(alpha))%>%                                             # Create variable total Distance(*)
+  ungroup()%>%
+  mutate(velo = alpha/t)%>%
+  group_by(part_id,trialNum)%>%
+  mutate(accel = lag(velo)-velo/t,                                # final velocity - starting velocity / time elapsed
+         accel = replace_na(accel, 0))%>%
+  ungroup()
+```
+
+# Create Labels
+```{r}
+
+Labels<-function(df)(df<-df%>%
+  ungroup()%>% # must ungroup before using as.factor()                
+  mutate("Reach Type" = as.factor(ifelse(tType ==-0.5 & acc == 1 & szDummyAgg == 0, 'No-go: Non-Reach',
+                                      ifelse(tType ==-0.5 & acc == 1 & szDummyAgg == 1, 'No-go: Partial Reach',
+                                           ifelse(tType ==-0.5 & acc == 0,'No-go: Full Reach',
+                                              ifelse(tType == 0.5 & acc == 1,'Go: Accurate',
+                                                   ifelse(tType==0.5 & acc== 0,'Go: Inaccurate',NA )))))),
+         
+         Age = as.factor(ifelse(ageRound==3, '3 (n=18)',
+                             ifelse(ageRound==4, '4 (n=37)',
+                                 ifelse(ageRound==5, '5 (n=44)',
+                                     ifelse(ageRound==6, '6 (n=27)',
+                                         ifelse(ageRound==7, '7 (n=26)', NA)))))),
+         
+         Condition = as.factor(ifelse(cueDum == 0, 'No Cue Highlight',
+                                   ifelse(cueDum == 1, 'Cue Highlight', NA))),
+         
+         "Trial Type" = as.factor(ifelse(tType == -1/2, 'No-Go',
+                                      ifelse(tType == 1/2, 'Go', NA)))
+         )) 
+
+dfAgg2<-Labels(dfAgg2)
+dfClean<-Labels(dfClean)
+```
+
+
+# Final data frames 
+```{r}
+# Create final data frames & write .csv files
+## Velocity & Acceleration data file
+dfTrialLevel<-dfClean[c('part_id','age','ageRound','cueDum','cueContrast',        # Keep only variables of interest
+                        'blockNum','trialNum','id','tType','acc','reachRT',
+                        'szDummy','szDummyAgg','xCoord','yCoord','dist','pDist','minDist',
+                        'minPDist','t','alpha','velo','accel','Reach Type','Age','Condition','Trial Type'
+                   )]
+
+## Aggregated data file
+dfAggregate<-dfAgg2[c('part_id','age','ageRound','cueDum','cueContrast','blockNum',# Keep only variables of interest
+                      'trialNum','tType','acc','reachRT','minDist','minPDist','szDummyAgg',
+                      'Reach Type','Age','Condition','Trial Type'
+                    )]
+```
+
+## Write .csv files
+```{r}
+write.csv(dfTrialLevel,file="202005_TrialLevel_BsSupport.csv", row.names = F)
+
+write.csv(dfAggregate,file="202005_AggregateData_BsSupport.csv", row.names = F)
+```
+
+
+# Code Books
+
+***
+##  <span style="color: blue;"> 202005_TbTData_BsSupport.csv </span>
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+TbTCB <- data.frame(
+  
+  # Column 1
+  Variable = c("part_id","age","ageRound","cueDum","cueContrast","blockNum","trialNum",
+               "id","tType", "acc","reachRT","szDummy",'szDummyAgg',"xCoord","yCoord","dist",
+               "pDist","t","$\\alpha$","velo","accel","Reach Type","Age",
+               "Condition","Trial Type"
+               ),
+  
+  # Column 2
+  Definition = c("participant identifier","participant age [years] at time of participation",
+                 "participant  age [years] at time of participation","cue condition, dummy coded",
+                 "cue condition, contrast coded","block number (within particpant)",
+                 "trial number (within participant)","data point id #","trial type","accuracy",
+                 "trial-level response time [ms] to open the box",
+                 "indicates whether the child left the safezone on individual observations level (by id)",
+                 "indicates whether the child left the safezone at any point during the trial",
+                 "x-coordinate for an observation [pxls]","y-coordinate for an observation [pxls]"
+                 ,"raw correct euclidean distance (distance from the target box):  
+                 $dist=\\sqrt{(x_2-x_1)^2 + (y_2-y_1)^2}$"
+                 ,"proportion correct euclidean distance (distance from the target box):  
+                 $pDist=\\frac{dist}{max dist from start point to target}$",
+                 "time","distance [pxls] between two adjacent observations:  
+                 $$\\alpha=\\sqrt{(x_{(i+1)}-x_i)^2 + (y_{(i+1)}-y_i)^2}$$",
+                 "the distance travelled between two observations divided by the time between the observations:  
+                 $\\frac{\\alpha_i}{t_i}$",
+                 "change in the velocity of movement from the beginning to the end of the reach trajectory:  
+                 $\\frac{velo_{final}-velo_{starting}}{\\Delta{t}}$","Label: What type of reach happened on this trial?", 
+                 "Label: age", "Label: condition","Label:Trial Type"
+                 ),
+   
+  # Column 3
+  Notes = c("","rounded to 2 dec","rounded to integer","0 = no cue highlight; 1 = cue highlight",
+            "-0.5 = no cue highlight; 0.5 = cue highlight","4 trials in each block","",
+            "keep observations within a trial in order","-0.5 = No-go; 0.5 = Go",
+            "0 = inaccurate; 1 = accurate","0 = box not opened",
+            "0 = did not leave safe zone; 1 = left safe zone",
+            "0 = did not leave safe zone; 1 = left safe zone",
+            "ranges from -1 to 1 with 0 at the center point (horizontally)",
+            "ranges from -1 to 1 with 0 at the center point (vertically)",
+            "If box was opened, dist = 0; if not opened, dist = max distance",
+            "dist corrected for differences in box locations",
+           "time elapsed [ms] between an observation and its immediately preceeding observation",
+            "", "", "","Non-Reach, Partial-Reach, Full Reach, Go-Accurate, OR, Go-Inaccuate trial (see below for defs)",
+            "for graphing/visualizations","for graphing/visualizations","for graphing/visualizations"
+             )
+                      )
+   
+# html doc table formatting code
+kable(TbTCB, "html", escape=FALSE) %>%
+  kable_styling(bootstrap_options = "striped", full_width = F, position = "left") #%>%
+  #column_spec(1, bold = T, border_right = T) #%>%
+  #column_spec(2, width = "20em")%>%
+  #column_spec(3, italic = T)
+```
+
+##  <span style="color: blue;">202005_AggregateData_BsSupport.csv</span>
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+VelocityCB <- data.frame(
+  
+  # Column 1
+  Variable = c("part_id","age","ageRound","cueDum","cueContrast","blockNum","trialNum","id",
+               "tType","acc","reachRT","minDist","minPDist","szDummyAgg","Reach Type","Age",
+               "Condition","Trial Type"
+               ),
+  
+  # Column 2
+  Definition = c("participant identifier","participant age [years] at time of participation",
+                 "participant  age [years] at time of participation","cue condition, dummy coded",
+                 "cue condition, contast coded","block number","trial number","data point id #",
+                 "trial type","accuracy","trial-level response time [ms] to open the box",
+                 "minimum raw correct euclidean distance (distance from the target box):  
+                 $dist=\\sqrt{(x_2-x_1)^2 + (y_2-y_1)^2}$",
+                 "minimum proportion correct euclidean distance (distance from the target box):  
+                 $pDist=\\frac{dist}{max dist from start point to target}$",
+                 "indicates whether the child left the safezone at any point in the trial (by trialNum)",
+                 "Label: What type of reach happened on this trial?", "Label: age", "Label: condition",
+                 "Label:Trial Type"
+                 ),
+  
+  # Column 3
+  Notes = c("","rounded to 2 dec","rounded to integer","0 = no cue highlight; 1 = cue highlight",
+            "-0.5 = no cue highlight; 0.5 = cue highlight","within particpant, 
+            4 trials in each block","within participant","keep observations within a trial in order",
+            "-0.5 = No-go; 0.5 = Go","0 = inaccurate; 1 = accurate","0 = box not opened",
+            "If box was opened, dist = 0; if not opened, dist = max distance",
+            "dist corrected for differences in box locations",
+            "0 = did not leave safe zone; 1 = left safe zone",
+            "Non-Reach, Partial-Reach, Full Reach, Go-Accurate, OR, Go-Inaccuate trial (see below for defs)",
+            "for graphing/visualizations","for graphing/visualizations","for graphing/visualizations"
+            )
+                      )
+   
+# html doc table formatting code
+kable(VelocityCB, "html") %>%
+  kable_styling(bootstrap_options = "striped", full_width = F, position = "left") #%>%
+  #column_spec(1, bold = T, border_right = T) #%>%
+  #column_spec(2, width = "20em")%>%
+```
+
+# Terms & Abbreviation
+```{r echo=TRUE}
+text_tbl <- data.frame(
+  
+  # Column 1
+  Term = c("Non-Reach", "Partial Reach","Full Reach", "Correct Distance","Proportion Distance"
+          ),
+  
+  # Column 2
+  Definition = c("Child did not leave the Safe Zone","Child left the Safe Zone but did not reach the target","Child reached the     target","Distance between the point where the participant stopped and the target","$\\frac{Correct Distance}{Max Distance from Start to Target}$"
+                 ),
+  
+  # Column 3
+  Aliases = c("Full inhibition", "Partial Inhibition", "","",""
+             )
+                      )
+   
+# html doc table formatting code
+kable(text_tbl, "html") %>%
+  kable_styling(bootstrap_options = "striped", full_width = F, position = "left") %>%
+  column_spec(1, bold = T, border_right = T) %>%
+  column_spec(2, width = "20em")%>%
+  column_spec(3, italic = T)
+```
+
+
+# EXTRA STUFF
+### Plot our new variables to check for skew
+```{r eval=FALSE, include=FALSE}
+dfAlpha<-dfClean%>%
+  ungroup()%>%
+  mutate(boxNum=as.factor(boxNum))%>%
+  filter(alpha > 0,
+         alpha < 0.1)
+
+tPlot<-ggplot(dfAlpha, aes(alpha, fill=cond))+
+  geom_density(position = "identity", alpha=0.5)
+
+tPlot #Shows a heavy sckew in distance data
+
+DistPlot<-ggplot(dfAlpha, aes(totalDist, fill=cond))+
+  geom_density(position = "identity", alpha=0.5)
+
+DistPlot  # bi-modalish
+
+
+DistPlotByBox<-ggplot(dfAlpha, aes(boxNum,totalDist, fill=cond))+
+  geom_violin(position = "identity", alpha=0.5)+
+  geom_boxplot(width=0.1, fill ="white")
+
+DistPlotByBox
+
+VeloPlot<-ggplot(dfAlpha, aes(velo, fill=cond))+
+  geom_density(position = "identity", alpha=0.5)
+
+VeloPlot # Left skew, Max and MuMax are weird af
+
+AccelPlot<-ggplot(dfAlpha, aes(accel, fill=cond))+
+  geom_density(position = "identity", alpha=0.5)+
+  xlim(-0.0005,0.0005)
+
+AccelPlot # Plain acceleration does is not skewed, Max and MuMax are weird af too
+```
+# Create Summarized Mean Data
+```{r eval=FALSE, include=FALSE}
+# Make this a summary of these data OR do this in the analysis file
+group_by(part_id, tType, acc, szDummy)%>% 
+  mutate(MuRT=mean(reachRT),                                                     #  get averages
+         MuPDist=mean(minPDist),                                                 #  con't
+         MuDist=mean(minDist))%>%                                                #  con't
+  ungroup()%>%
+  group_by(part_id, tType)%>%
+  mutate(MuAcc=mean(acc))%>%                                                     #  get averages **Redundant ACC calc at 99
+  ungroup()
+
+    group_by(part_id,trialNum)%>%
+    mutate(accel = lag(velo)-velo,
+           accel = replace_na(accel, 0),
+           MaxAccel = max(accel),                              # Maximum acceleraion for each participant's trial
+           MaxVelo = max(velo))%>%                             # Maximum velocity for each participant's trial
+  ungroup(
+  group_by(part_id)%>%
+  mutate(MuMaxAccel = mean(MaxAccel),                          # Mean maximum acceleration for each participant
+         MuMaxVelo = mean(MaxVelo))                            # Mean maximum velocity for each participant
+```
