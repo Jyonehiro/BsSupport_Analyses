@@ -1,0 +1,788 @@
+---
+title: "BS-Support Results"
+author: "Jade Yonehiro"
+contact: "Jnyonehiro@ucdavis.edu"
+date: "May 2020"
+output:
+  html_document:
+    theme: cosmo
+    df_print: paged
+    highlight: breezedark
+    toc: true
+    toc_float: true
+    toc_depth: 2
+    code_folding: hide
+    code_download: true
+---
+
+```{r setup, message = FALSE, include=FALSE}
+library(readr)       # read_csv()
+library(dplyr)       # data wrangling -> mutate()
+library(tidyr)       # data wrangling -> unnest()
+library(ggplot2)     # plotting 
+library(png)         # adding img to ggplot
+library(grid)        # plotting
+library(ggpubr)      # plotting
+library(kableExtra)  # making tables
+library(knitr)
+library(lmSupport)
+library(lme4)
+library(lmerTest)
+library(car)         # Needed for McSummary()
+source('http://psych.colorado.edu/~jclab/R/mcSummaryLm.R')
+```
+
+```{r setup DataFiles, message = FALSE}
+### DATA FILES ###
+# Load Trial-level Data File
+## PC Pathway
+dfTrialLevel = read.delim("C:/Users/Jade/Dropbox/0_Studies/1_InhibCtrl2019/0_Analyses/2020_MotionTracking/202005_TrialLevel_BsSupport.csv",sep=",", header = TRUE)
+## Mac Pathway
+#dfTrialLevel = read.delim("~/Dropbox/0_Studies/1_InhibCtrl2019/0_Analyses/2020_MotionTracking/202005_TrialLevel_BsSupport.csv",sep=",", header = TRUE)
+
+# Load Aggregated Data File
+## PC Pathway
+dfAgg = read.delim("C:/Users/Jade/Dropbox/0_Studies/1_InhibCtrl2019/0_Analyses/2020_MotionTracking/202005_AggregateData_BsSupport.csv",sep=",", header = TRUE)
+## Mac Pathway
+#dfAgg = read.delim("~/Dropbox/0_Studies/1_InhibCtrl2019/0_Analyses//2020_MotionTracking/202005_AggregateData_BsSupport.csv",sep=",", header = TRUE)
+
+# Set theme for plotting
+mytheme <-theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+          panel.background = element_blank(), axis.line = element_line(colour = "black"))
+```
+
+
+# Terms & Abbreviation
+```{r echo=TRUE}
+text_tbl <- data.frame(
+  
+  # Column 1
+  Term = c("Non-Reach", "Partial Reach","Full Reach", "Correct Distance","Proportion Distance"),
+  
+  # Column 2
+  Definition = c("Child did not leave the Safe Zone","Child left the Safe Zone but did not reach the target","Child reached the target","Distance between the point where the participant stopped and the target","$\\frac{Correct Distance}{Max Distance from Start to Target}$"),
+  
+  # Column 3
+  Aliases = c("Full inhibition", "Partial Inhibition", "","","")
+                      )
+   
+# html doc table formatting code
+kable(text_tbl, "html") %>%
+  kable_styling(bootstrap_options = "striped", full_width = F, position = "left") %>%
+  column_spec(1, bold = T, border_right = T) %>%
+  column_spec(2, width = "20em")%>%
+  column_spec(3, italic = T)
+```
+
+
+# Overall Distance {.tabset .tabset-pills}
+
+|        Accuracy and response times metrics are commonly used when assessing overall Go/No-go task performance. However, because these measures coarsely summarize the entirety of the response to a given Go/No-go trial, they do not provide detailed process-level information about how and when children inhibit behaviors. A motion tracking approach provides significant advantages to more traditional approaches to measuring inhibitory control. Motion tracking allows us to capture a clearer picture of how long it takes children to inhibit the pre-potent response to reach towards a target. With these data, we can evaluate the distance children travelled before stopping themselves from making an error, providing a more sensitive measure than standard accuracy and response time variables.   
+
+<span style="text-decoration:underline">**NOTES**</span>   
+- These analyses include both Partial and Nonreaches on accurate No-Go trials (i.e., any succesful inhibition trial)  
+- We evaluated both raw correct distance and proportion correct distance in these analyses; however, propotion correct distance is the preferred metric because it corrects for differences in the distance between the start point and the 4 potential box positions.
+
+- Correct Distance = Distance between the point where the participant stopped and the target
+- Proportion Distance = $\frac{Correct Distance}{Max Distance from Start to Target}$  
+- <span style="color: red;">Larger numbers are better, they indicate that the child stopped further away from the target (a.k.a. they stopped the behavior sooner)</span>
+
+```{r}
+dfDist<-dfAgg%>%
+  group_by(part_id,ageRound,cueDum,tType,acc)%>%
+  summarise(MuPDist=mean(minPDist),
+            MuDist=mean(minDist))%>%
+  ungroup()
+
+# PLOT
+DistPlot<-dfAgg%>%
+  filter(acc == 1,
+         tType == -0.5)%>%
+  mutate(cueDum=as.factor(cueDum)) %>%
+  filter(!is.na(ageRound)) %>%
+  group_by(ageRound, cueDum) %>% 
+  summarise(mean = mean(minDist, na.rm=TRUE),     # Distance
+            n = length(minDist),
+            sd = sd(minDist, na.rm=TRUE),
+            meanP = mean(minPDist, na.rm=TRUE),   # Proportion Distance
+            nP = length(minPDist),
+            sdP = sd(minPDist, na.rm=TRUE)) %>% 
+  mutate(se = sd/sqrt(n),
+         seP = sdP/sqrt(nP))%>%
+  ungroup()%>%
+  mutate(age = ifelse(ageRound==3, '3 (n=18)',
+                    ifelse(ageRound==4, '4 (n=37)',
+                        ifelse(ageRound==5, '5 (n=44)',
+                            ifelse(ageRound==6, '6 (n=27)',
+                                 ifelse(ageRound==7, '7 (n=26)', NA))))))
+```
+
+## Correct distance on accurate No-Go trials
+
+<p style="font-weight:400; font-size:20px">Raw Correct Distance</p>
+<p style="font-weight:400; font-size:20px">Question</p>
+Does the raw correct distance differ between the two conditions (Cue v. No-Cue) and age (3-7)?  
+
+  $NoGoDist_i=\beta_0+\beta_1age_i+\beta_3Cue_i+\beta_4age*Cue_i+\epsilon_i$  
+
+<p style="font-weight:400; font-size:20px">Results</p>
+ - **Age:** Age (3-7) was a significant predictor of raw correct distance on accurate No-Go trials (p = .044). Children's raw correct distance increased with age. In other words, older children stopped their reach further away from the target than younger children did.       
+ - **Condition:** *Not Significant*   
+ - **Interaction:** *Not Significant*    
+
+```{r}
+# Includes trials where they did not leave the safe zone (e.g Max Dist possible)
+MotionContRaw<-lm(MuDist ~ ageRound + cueDum + ageRound*cueDum, dfDist, subset= tType == -0.5 & acc == 1)  
+mcSummary(MotionContRaw)
+
+```
+***
+
+## Proportion Correct Distance on accurate NO-GO trials
+<p style="font-weight:400; font-size:20px">Question</p>
+Does the proportion correct distance differ between the two conditions (Cue v. No-Cue) and age (3-7)?  
+
+  $NoGoPDist_i=\beta_0+\beta_1age_i+\beta_3Cue_i+\beta_4age*Cue_i+\epsilon_i$ 
+
+<p style="font-weight:400; font-size:20px">Results</p>
+ - **Age:** Age (3-7) was a significant predictor of proportion correct distance on accurate No-Go trials (p =.012). Children's proportion correct distance increased with age. In other words, older children stopped their reach further away from the target than younger children did.    
+ - **Condition:** *Not Significant*
+- **Interaction:** *Not Significant*
+
+```{r}
+# Includes trials where they did not leave the safe zone (e.g Max Dist possible)
+MotionContP<-lm(MuPDist ~ ageRound + cueDum + ageRound*cueDum, dfDist, subset= tType == -0.5 & acc == 1)  
+mcSummary(MotionContP)
+```
+***
+
+## Visualizations and Summary [+]
+<p style="font-weight:400; font-size:20px">Overall Distance Results Summary</p>
+
+- Age was a significant predictor of both Correct Distance and Proportion Correct Distance on No-go trials. We found that older children stopped their reach further away from the target than younger children did. There was no significant difference between the conditions for either distance variable.  
+- <span style="color: red;">**Condition was not a significant predictor; however, visual inspection of the data show a pattern which is the opposite of what we expected. 4-,6-,and 7-year-olds proportion correct distance was (visually) higher in the Cue condition than in the no-cue condition.**</span> BUT, see partial reach results summary 
+```{r}
+# Plot the raw correct distance
+PlotPartialRaw<-ggplot(DistPlot,aes(ageRound, mean, fill=cueDum)) + 
+    geom_bar(stat = "identity",position=position_dodge(),color="black", size=.3) + 
+    scale_fill_manual(name="Condition",labels = c("No-Cue", "Cue"),values=c("#4F9CC4", "#e8b63f")) +
+    geom_errorbar(aes(ymin=mean-se, ymax=mean + se), width=.2,
+                  position=position_dodge(.9)) + 
+    mytheme+
+    ylab("Correct Distance")+
+    xlab("Age")
+
+
+# Plot the raw correct distance
+PlotPartialP<-ggplot(DistPlot,aes(ageRound, meanP, fill=cueDum)) + 
+    geom_bar(stat = "identity",position=position_dodge(),color="black", size=.3) + 
+    scale_fill_manual(name="Condition",labels = c("No-Cue", "Cue"),values=c("#4F9CC4", "#e8b63f")) +
+    geom_errorbar(aes(ymin=meanP-seP, ymax=meanP + seP), width=.2,
+                  position=position_dodge(.9)) + 
+    mytheme+
+    ylab("Proportion Correct Distance")+
+    xlab("Age")+
+    ylim(0,1)
+
+
+figure<-ggarrange(PlotPartialRaw, PlotPartialP, ncol = 2, legend="bottom", common.legend = T)
+annotate_figure(figure,
+                top = text_grob("Correct Distance and Proportion Correct Distance on Accurate No-go Trials"))
+```
+
+***
+
+# Distance by Reach Type  
+|        In addition to the benefits mentioned previously, a motion tracking Go/No-go paradigm allows for the differentiation of partial inhibitions (i.e., initiation of a response as indexed by the child leaving the safe zone and moving toward the box but stopping before reaching the box), failed inhibitions (i.e., opening the box), and full inhibitions (i.e., child does not leave the safe-zone and makes no movement toward the box). Previous studies have demonstrated the importance of separating full and partial inhibitions when evaluating older children’s inhibitory control (Chevalier et al., 2014; Cragg et al., 2009). In our case, partial inhibitions provide the optimal medium for testing the effectiveness of an inhibitory control intervention. If a context monitoring intervention is successful, there should be differences in the frequency of these two inhibition types. Further, there should be differences in the speed with which children stop themselves and the distance they travel during partial inhibitions.   
+
+<span style="text-decoration:underline">**NOTES**</span>   
+- We evaluated both raw correct distance and proportion correct distance in these analyses; however, proportion correct distance is the preferred metric because it corrects for differences in the distance between the start point and the 4 potential box positions.  
+
+
+## Info on Reach Types {.tabset .tabset-pills}
+
+### Percent of ReachTypes by Age
+```{r}
+# Label the reach types 
+dfFreq<-dfAgg%>%
+  mutate(reachType = ifelse(tType ==-0.5 & acc == 1 & szDummyAgg == 0, 'No-go: Non-Reach',
+                            ifelse(tType ==-0.5 & acc == 1 & szDummyAgg == 1, 'No-go: Partial Reach',
+                                   ifelse(tType ==-0.5 & acc == 0,'No-go: Full Reach',
+                                          ifelse(tType == 0.5 & acc == 1,'Go: Accurate',
+                                                 ifelse(tType==0.5 & acc== 0,'Go: Inaccurate',NA ))))),
+         reachType = as.factor(reachType)
+         ) 
+
+# Create df for the frequency data table
+reachFreq <- dfFreq %>% 
+  group_by(ageRound,reachType) %>% 
+  mutate(frequency = n())%>%                                 # Get frequency of each reach type within each age group
+  ungroup()%>%
+  group_by(ageRound,tType)%>%                       
+  mutate(totalTrials = length(trialNum),                     # Figure out how many trials there were
+         percent = (frequency/totalTrials)*100)%>%           # Find % of frequency
+  ungroup()%>%
+  distinct(ageRound, reachType, frequency, totalTrials, percent)%>% # Remove duplicate variables in data frame
+  arrange(ageRound,reachType)                                     # Make sure the rows are sorted in the order we want
+
+
+
+reachFreq <- reachFreq[c("ageRound", "reachType", "frequency", "totalTrials", "percent")]%>%
+  kable(digits = 2) %>%
+  kable_styling(bootstrap_options = "striped") %>%
+  pack_rows("3-year-olds",1,5)%>%                            # Groups the output rows by label
+  pack_rows("4-year-olds",6,10)%>%
+  pack_rows("5-year-olds",11,15)%>%
+  pack_rows("6-year-olds",16,20)%>%
+  pack_rows("7-year-olds",21,25)%>%
+  scroll_box(width = "100%", height = "500px")
+reachFreq
+```
+### Percent of ReachTypes by Age & Condition
+```{r}
+
+reachFreq <- dfFreq %>% 
+  mutate(cueDum = factor(cueDum, levels=c(0,1),labels=c("No Cue","Cue")))%>%
+  group_by(ageRound,cueDum, reachType) %>% 
+  mutate(frequency = n())%>%                                 # Get frequency of each reach type within each age group & condition 
+  group_by(ageRound, cueDum, tType)%>%                       
+  mutate(totalTrials = length(trialNum),                     # Figure out how many trials there were
+         percent = (frequency/totalTrials)*100)%>%           # Find % of frequency
+  ungroup()%>%
+  distinct(ageRound, cueDum, reachType, frequency, totalTrials, percent)%>% # Remove duplicate variables in data frame
+  arrange(ageRound,cueDum,reachType)                                     # Make sure the rows are sorted in the order we want
+
+
+
+reachFreqtbl <- reachFreq%>%
+  kable(digits = 2) %>%
+  kable_styling(bootstrap_options = "striped") %>%
+  pack_rows("3-year-olds",1,10)%>%                            # Groups the output rows by label
+  pack_rows("4-year-olds",11,20)%>%
+  pack_rows("5-year-olds",21,30)%>%
+  pack_rows("6-year-olds",31,40)%>%
+  pack_rows("7-year-olds",41,50)%>%
+  scroll_box(width = "100%", height = "500px")
+reachFreqtbl
+```
+
+***
+
+### Visualization: distance data by reach type
+
+Variation in proportion distance traveled is captured in the partial reach trials, but not full or non-reach trials 
+```{r}
+dfFreq2<-dfFreq%>%
+  group_by(part_id,ageRound, cueDum, reachType)%>%
+  summarise(pDist2=mean(minPDist))%>%
+  filter(reachType != "Go: Accurate",
+         reachType != "Go: Inaccurate")%>%
+  ungroup(cueDum)%>%
+  mutate(cueDum= factor(cueDum, levels=c(0,1),labels=c("No cue","Cue")))
+
+
+DistByReachType<-ggplot(dfFreq2,aes(ageRound,pDist2,color=reachType))+
+  geom_point()+
+  geom_jitter()+
+  scale_color_manual(values=c("#4F9CC4","#23238c","#e8b63f"))+
+  mytheme+
+  theme(legend.position="top")+
+  ylab("Proportion Correct Distance")+
+  xlab("Age")+
+  facet_wrap(~cueDum)
+
+DistByReachType
+
+```
+***
+
+## Partial Reaches {.tabset .tabset-pills}
+|        Partial reaches are instances where the child left the Safe Zone but did not reach the target. In other words, they initiated a movement but stopped the movement before committing an error. Separating these from non-reach trials (a.k.a. full inhibition) allows us to capture the exact moment of inhibition and quantify the magnitude of a partial inhibition (i.e., how close a child gets to committing a full error). 
+
+
+### Frequency of partial reaches
+No significant difference in the frequency of partial reaches 
+```{r}
+szd2= dplyr::summarize(group_by(dfFreq,ageRound,cueDum,tType),
+                              FrequencyPartialReaches=sum(szDummyAgg),                # How many times did children leave the safe sone
+                              TotalTrials = length(szDummyAgg),                       # How many trials were there total
+                              Percent = (FrequencyPartialReaches/TotalTrials)*100)     
+
+PercentPartial<-lm(Percent~ ageRound*cueDum, szd2)  
+mcSummary(PercentPartial)
+```
+***
+
+### Raw Correct Distance
+
+<p style="font-weight:400; font-size:20px">Question</p>
+Does the raw correct distance differ across ages and condition in **partial reach** trials?   
+- Partial reach trials = Accurate No-Go trials where children left the safe zone.
+
+  $NoGoRawDist_i=\beta_0+\beta_1age_i+\beta_3Cue_i+\beta_4age*Cue_i+\epsilon_i$ 
+
+<p style="font-weight:400; font-size:20px">Results</p>
+ - Age: *Not Significant*     
+ - Condition: *Not Significant* 
+- Interaction: *Not Significant* 
+
+```{r}
+df1<-dfAgg%>%
+  ungroup()%>%
+  group_by(part_id,ageRound,tType,acc,szDummyAgg, cueDum)%>%
+  summarise(MuPDist=mean(minPDist),
+            MuDist=mean(minDist))%>%
+  ungroup()
+
+PartialInhibCont1<-lm(MuDist~ ageRound + cueDum + ageRound*cueDum,df1,subset= tType==-0.5 & szDummyAgg==1 & acc==1)  
+mcSummary(PartialInhibCont1)
+```
+
+***
+
+### Proportion Correct Distance
+
+<p style="font-weight:400; font-size:20px">Question</p>
+Does the proportion correct distance differ across ages and condition in **partial reach** trial?.   
+- Partial reach trials = Accurate No-Go trials where children left the safe zone.
+
+  $NoGoPDist_i=\beta_0+\beta_1age_i+\beta_3Cue_i+\beta_4age*Cue_i+\epsilon_i$ 
+
+<p style="font-weight:400; font-size:20px">Results</p>
+ - Age: *Not Significant*     
+ - Condition: *Not Significant* 
+- Interaction: *Not Significant* [+]
+
+```{r}
+PartialInhibCont<-lm(MuPDist~ + cueDum + ageRound*cueDum,df1,subset= tType==-0.5 & szDummyAgg==1 & acc==1)  
+mcSummary(PartialInhibCont)
+```
+
+### Visualizations and Summary
+<p style="font-weight:400; font-size:20px">Partial Reaches Summary</p>
+
+- There were no significant effects found in the partial reaches :(    
+- <span style="color: red;">**Partial inhibitions showed the expected result pattern (with the exception of 3-year-olds, our smallest group). Younger children (4-6) did better in the Cue condition and 7-year-olds did better in the No-Cue condition**</span> This is part of why the motion data is so valuable, by breaking down the reach types and using distance data we can see that pattern of interest in a way more coarse level measures do not allow for. 
+
+```{r}
+# PLOT
+dfplot<-df1%>%
+  ungroup()%>%
+  filter(szDummyAgg == 1,                           # Partial reaches only
+         acc == 1,
+         tType == -0.5)%>%
+  mutate(cueDum=as.factor(cueDum)) %>%
+  group_by(ageRound, cueDum, szDummyAgg) %>% 
+  summarise(n = length(MuDist),
+            mean = mean(MuDist),     # Distance
+            sd = sd(MuDist),
+            meanP = mean(MuPDist),   # Proportion Distance
+            nP = length(MuPDist),
+            sdP = sd(MuPDist)) %>% 
+  mutate(se = sd/sqrt(n),
+         seP = sdP/sqrt(nP))%>%
+  ungroup()%>%
+  mutate(age = ifelse(ageRound==3, '3 (n=18)',
+                    ifelse(ageRound==4, '4 (n=37)',
+                        ifelse(ageRound==5, '5 (n=44)',
+                            ifelse(ageRound==6, '6 (n=27)',
+                                 ifelse(ageRound==7, '7 (n=26)', NA))))))
+
+# Plot the raw correct distance
+PlotPartialRaw<-ggplot(dfplot,aes(age, mean, fill=cueDum)) + 
+    geom_bar(stat = "identity",position=position_dodge(),color="black", size=.3) + 
+    scale_fill_manual(name="Condition",labels = c("No-Cue", "Cue"),values=c("#4F9CC4", "#e8b63f")) +
+    geom_errorbar(aes(ymin=mean-se, ymax=mean + se), width=.2,
+                  position=position_dodge(.9)) + 
+    mytheme+
+    ylab("Correct Distance")+
+    xlab("Age")
+
+#plot(PartialInhibCont)
+
+ # Plot the proportion of dcorrect istance
+ PlotPartialPro<-ggplot(dfplot,aes(age, meanP, fill=cueDum)) + 
+    geom_bar(stat = "identity",position=position_dodge(),color="black", size=.3) + 
+    scale_fill_manual(name="Condition",labels = c("No-Cue", "Cue"),values=c("#4F9CC4", "#e8b63f")) +
+    geom_errorbar(aes(ymin=meanP-seP, ymax=meanP + seP), width=.2,
+                  position=position_dodge(.9)) + 
+    mytheme+
+    ylab("Proportion Correct Distance")+
+    xlab("Age")+
+    ylim(0,1)
+
+
+figure<-ggarrange(PlotPartialRaw, PlotPartialPro, ncol = 2, legend="bottom", common.legend = T)
+annotate_figure(figure,
+                top = text_grob("Correct Distance and Proportion Correct Distance on Partial Reach Trials"))
+```
+
+
+***
+5yos Partial Reach Visualizations available in older script version  
+***
+
+
+## Full Reaches {.tabset .tabset-pills}
+
+### Frequency of full reaches
+
+As age increased, the % of full reaches on inaccurate No-Go trials decreased (p=.049). In other words, younger children were more likely to make an error than older children.
+_ These results are just the inverse of the accuracy data
+
+```{r}
+szd2= dplyr::summarize(group_by(dfFreq,ageRound,cueDum,tType,acc),
+                              FrequencyPartialReaches=sum(szDummyAgg),                # How many times did children leave the safe sone
+                              TotalTrials = length(szDummyAgg),             # How many trials were there total
+                              Percent = (FrequencyPartialReaches/TotalTrials)*100)     
+
+PercentPartial<-lm(Percent~ageRound*cueDum,szd2)  
+mcSummary(PercentPartial)
+```
+
+***
+
+### Response times
+<p style="font-weight:400; font-size:20px">Question</p>
+Did response times differ between the two conditions (Cue v. No-Cue) and across ages (3-7) in the full reach trials?
+
+  $\bar{NOGORT_i}= \beta_0+\beta_1Age_i+\beta_2Condition_i+\beta_3Age*Condition_i+\epsilon_i$   
+  
+<p style="font-weight:400; font-size:20px">Results</p>
+ - Age: Age (3-7) was a significant predictor of response times on full reach No-Go trials (p=.011). Children's response times decreased with age.    
+ - Condition: *Not Significant*   
+- Interaction: *Not Significant* 
+```{r}
+df1<-dfAgg%>%
+  group_by(part_id,ageRound, cueDum, tType, acc)%>%
+  summarise(MuRT = mean(reachRT))%>%
+  ungroup()
+
+
+RTContNOGO<-lm(MuRT~ageRound+cueDum+ageRound*cueDum,df1, subset = tType == -0.5 & acc==0)
+mcSummary(RTContNOGO)
+
+dfplot<-dfAgg%>%
+  ungroup(cueDum)%>%
+  mutate(cueDum=as.factor(cueDum), 
+         tType = factor(tType, levels=c(-.5,.5),labels=c("NoGo","Go"))) %>%
+  filter(!is.na(ageRound), !is.na(reachRT), !is.na(tType)) %>%
+  group_by(ageRound, tType, cueDum,acc) %>% 
+  summarise(mean = mean(reachRT, na.rm=TRUE),
+            se = sd(reachRT)/sqrt(length(reachRT)))%>%
+  ungroup()%>%
+  mutate(age = ifelse(ageRound==3, '3 (n=18)',
+                    ifelse(ageRound==4, '4 (n=37)',
+                        ifelse(ageRound==5, '5 (n=44)',
+                            ifelse(ageRound==6, '6 (n=27)',
+                                 ifelse(ageRound==7, '7 (n=26)', NA))))))%>%
+  filter(acc==0,
+         tType =='NoGo')
+
+PlotRT<-ggplot(dfplot,aes(age, mean, fill=cueDum)) + 
+    geom_bar(stat = "identity",position=position_dodge(),color="black", size=.3) + 
+    scale_fill_manual(name="Condition",labels = c("No-Cue", "Cue"),values=c("#4F9CC4", "#e8b63f")) +
+    geom_errorbar(aes(ymin=mean-se, ymax=mean + se), width=.2,
+                  position=position_dodge(.9)) + 
+    ggtitle("Response Times by Age and Condition For Full Reaches") +
+    mytheme+
+    ylab("Response Time")+
+    xlab("Age")
+
+ PlotRT
+```
+
+***
+
+### Raw Correct Distance
+<p style="font-weight:400; font-size:20px">Question</p>
+Does the raw correct distance differ across ages and condition in **full reach** trials?  
+
+**NOTE** This is just a check, there should be no difference because the boxes were opened on these trials (distance = 0)
+
+  $NoGoRawDist_i=\beta_0+\beta_1age_i+\beta_3Cue_i+\beta_4age*Cue_i+\epsilon_i$ 
+
+<p style="font-weight:400; font-size:20px">Results</p>
+ - Age: *Not Significant*     
+ - Condition: *Not Significant* 
+- Interaction: *Not Significant* 
+
+<span style="color: red;">**Scroll down for visualizations!**</span>
+NOTE: Variance in the graph is due to differences in the Box distances because these are Raw distance data. The proportion variable shows all at 100% because 100% of the distance was traveled
+
+```{r}
+df1<-dfAgg%>%
+  group_by(part_id,ageRound,tType,acc,szDummyAgg, cueDum)%>%
+  summarise(MuPDist=mean(minPDist),
+            MuDist=mean(minDist))%>%
+  ungroup()
+
+PartialInhibCont1<-lm(MuDist~ ageRound + cueDum + ageRound*cueDum,df1,subset= tType==-0.5 & szDummyAgg==1 & acc==0)  
+mcSummary(PartialInhibCont1)
+
+```
+
+***
+
+### Proportion Correct Distance
+<p style="font-weight:400; font-size:20px">Question</p>
+Does the proportion correct distance differ across ages and condition in **full reach** trials?   
+
+**NOTE** This is just a check, there should be no difference because the boxes were opened on these trials (distance = 0)
+
+  $NoGoPDist_i=\beta_0+\beta_1age_i+\beta_3Cue_i+\beta_4age*Cue_i+\epsilon_i$ 
+
+<p style="font-weight:400; font-size:20px">Results</p>
+ - Age: *Not Significant*     
+ - Condition: *Not Significant* 
+- Interaction: *Not Significant*  
+
+```{r}
+PartialInhibCont<-lm(MuPDist~ ageRound + cueDum + ageRound*cueDum,df1,subset= tType==-0.5 & szDummyAgg==1 & acc==0)  
+mcSummary(PartialInhibCont)
+
+#plot(PartialInhibCont)
+
+ # Plot the proportion of dcorrect istance
+ PlotPartialPro<-ggplot(dfplot,aes(ageRound, meanP, fill=cueDum)) + 
+    geom_bar(stat = "identity",position=position_dodge(),color="black", size=.3) + 
+    scale_fill_manual(name="Condition",labels = c("No-Cue", "Cue"),values=c("#4F9CC4", "#e8b63f")) +
+    geom_errorbar(aes(ymin=meanP-seP, ymax=meanP + seP), width=.2,
+                  position=position_dodge(.9)) + 
+    ggtitle("Proportion Correct Distance on Full Reach Trials") +
+    mytheme+
+    ylab("Proportion Correct Distance")+
+    xlab("Age")+
+    ylim(0,1)
+
+#PlotPartialPro
+```
+
+***
+
+Nonreach Check available in older script versions
+***
+
+# Velocity & Acceleration 
+
+In addition to distance data, we can look at children's acceleration and velocity data.
+
+  - **Velocity:** the distance traveled between two observations divided by the time between the observations:   
+                 $\frac{\alpha_i}{t_i}$ where $\alpha=\sqrt{(x_{(i+1)}-x_i)^2 + (y_{(i+1)}-y_i)^2}$   
+                 
+     + Found the max velocity for each participant's trial and then found the averages for each group (age X condition X trial type)    
+ 
+                 
+  - **Acceleration:** change in the velocity of movement from the beginning to the end of the reach trajectory:    
+                 $\frac{velo_{final}-velo_{starting}}{\Delta{t}}$     
+                 
+    + Found the average acceleration for each participant's trial and then found the averages for each group (age X condition X trial type)
+```{r}
+dfAV<-dfTrialLevel%>%
+  ungroup()%>%
+  group_by(part_id,trialNum)%>%  
+  mutate(meanaccel = mean(accel),                         # find the mean for each participant's trial (larger = more change)
+         maxVelo = max(velo))%>%                          # find the max velocity for each trial
+  ungroup()%>%
+  group_by(ageRound, cueDum, cueContrast, tType)%>%       # find the mean for age group, condition, and trial type
+  summarise(muMaxVelo = mean(maxVelo),
+            muAccel = mean(accel))%>%                     # Find the mean for each cue, age, and trial type
+  ungroup()
+```
+
+## Velocity{.tabset .tabset-pills}
+### Velocity across All trial types
+
+<p style="font-weight:400; font-size:20px">Question</p>
+Overall, does the mean max-velocity differ between the two conditions (Cue v. No-Cue) and across age (3-7)?  
+
+  $\bar{MaxVelo_i}= \beta_0+\beta_1Age_i+\beta_2Condition_i+\beta_3TrialType_i+...\beta_7Age*Condition_i*TrialType+\epsilon_i$
+
+
+<p style="font-weight:400; font-size:20px">Results</p>
+ - **Age:** Age (3-7) was a significant predictor of velocity (p=.032), as age increased, velocity increased. 
+ - **Condition:** *Not Significant* 
+ - **Trial Type:** Trial type (Go v. No-Go) was a significant predictor of velocity *across trial types* (p=.047), velocity was slower in Go trials than No-Go trials (faster on errors?)  
+ - **Age * Trial Type:** There was a significant interaction between age and trial type for velocity (p=.001). The difference in velocity between Go and No-Go trials got larger as age increased.   
+ - **Age * Trial Type * Condition:** There was a significant 3-way interaction between age, trial type, and condition for velocity (p=.021).   The age * Trial Type effect was larger in the Cue condition than the no-cue condition.      
+ - No other interactions were significant  
+
+
+```{r}
+VeloAllTrials<-lm(muMaxVelo ~ ageRound + cueContrast + tType + ageRound*tType*cueContrast, dfAV)
+mcSummary(VeloAllTrials)
+
+#plot(VeloAllTrials)
+```
+***
+
+### Velocity on GO trials.
+<p style="font-weight:400; font-size:20px">Question</p>
+Did velocity differ between the two conditions (Cue v.No-Cue) and across ages (3-7)in the GO trials?
+
+  $\bar{MaxVelo_i}= \beta_0+\beta_1Age_i+\beta_2Condition_i+\beta_3Age*Condition_i+\epsilon_i$ 
+
+<p style="font-weight:400; font-size:20px">Results</p>
+ - **Age:**  *Not Significant*  
+ - **Condition:** *Not Significant*  
+ - **Interaction:** There was a significant interaction between age and condition (p=.010) such that the difference between the cue and no cue condition got larger as age increased.  
+```{r}
+VeloGO<-lm(muMaxVelo ~ ageRound + cueDum + ageRound*cueDum, dfAV, subset = tType == 0.5)
+mcSummary(VeloGO)
+```
+***
+
+### Velocity on NO-GO trials
+<p style="font-weight:400; font-size:20px">Question.</p>
+Did velocity differ between the two conditions (Cue v. No-Cue) and across ages (3-7) in the **NO-GO trials**?
+
+  $\bar{MaxVelo_i}= \beta_0+\beta_1Age_i+\beta_2Condition_i+\beta_3Age*Condition_i+\epsilon_i$ 
+
+<p style="font-weight:400; font-size:20px">Results</p>
+ - **Age:** *Not Significant*   
+ - **Condition:** *Not Significant* 
+ - **Interaction:** *Not Significant* 
+```{r}
+VeloNOGO<-lm(muMaxVelo ~ ageRound + cueDum + ageRound*cueDum, dfAV, subset = tType == -0.5)
+mcSummary(VeloNOGO)
+```
+***
+
+
+## Acceleration {.tabset .tabset-pills}
+
+### Acceleration across All trial types
+
+<p style="font-weight:400; font-size:20px">Question</p>
+Overall, does mean acceleration differ between the two conditions (Cue v. No-Cue) and across age (3-7)?  
+
+  $\bar{Accel_i}= \beta_0+\beta_1Age_i+\beta_2Condition_i+\beta_3TrialType_i+...\beta_7Age*Condition_i*TrialType+\epsilon_i$ 
+
+
+<p style="font-weight:400; font-size:20px">Results</p>
+ - **Age:** Age (3-7) was a significant predictor of velocity (p=.032), as age increased, velocity increased. 
+ - **Condition:** Condition was a significant predictor of acceleration (p=0.026) such that the cue condition had higher acceleration than the no-cue condition
+ - **Trial Type:** *Not significant*
+ - **Age * Trial Type:** There was a significant interaction between age and trial type for acceleration (p<.001). The difference in acceleration between Go and No-Go trials got larger as age increased.  - **Age * Condition:** There was a significant interaction between age and condition for acceleration (p=.002). The difference in acceleration between Cue and No cue conditions trials got larger as age increased.
+ - **Trial Type * Condition:** There was a significant interaction between trial type and condition for acceleration (p=.03). The difference in acceleration between Go and No-Go trials was larger in the cue condition than in the no-cue condition
+ - **Age * Trial Type * Condition:** There was a significant 3-way interaction between age, trial type, and condition for velocity (p=.014).   The age * Trial Type effect was larger in the Cue condition than the no-cue condition.      
+
+```{r}
+AccelAllTrials<-lm(muAccel ~ ageRound + cueContrast + tType + ageRound*tType*cueContrast, dfAV)
+mcSummary(AccelAllTrials)
+
+#plot(AccelAllTrials)
+```
+
+***
+
+### Acceleration on GO trials.
+<p style="font-weight:400; font-size:20px">Question</p>
+Did acceleration differ between the two conditions (Cue v.No-Cue) and across ages (3-7)in the GO trials?
+
+  $\bar{Accel_i}= \beta_0+\beta_1Age_i+\beta_2Condition_i+\beta_3Age*Condition_i+\epsilon_i$ 
+
+<p style="font-weight:400; font-size:20px">Results</p>
+ - **Age:** Age (3-7) was a significant predictor of acceleration (p<.001), as age increased, acceleration increased. 
+ - **Condition:** Condition was a significant predictor of acceleration (p=0.034) such that the cue condition had higher acceleration than the no-cue condition  
+ - **Interaction:** There was a significant interaction between age and condition (p=.009) such that the difference between the cue and no cue condition got larger as age increased.  
+```{r}
+AccelGO<-lm(muAccel ~ ageRound + cueDum + ageRound*cueDum, dfAV, subset = tType == 0.5)
+mcSummary(AccelGO)
+```
+
+***
+
+### Acceleration on NO-GO trials
+<p style="font-weight:400; font-size:20px">Question.</p>
+Did acceleration differ between the two conditions (Cue v. No-Cue) and across ages (3-7) in the **NO-GO trials**?
+
+  $\bar{Accel_i}= \beta_0+\beta_1Age_i+\beta_2Condition_i+\beta_3Age*Condition_i+\epsilon_i$ 
+
+<p style="font-weight:400; font-size:20px">Results</p>
+ - **Age:** *Not Significant* 
+ - **Condition:** *Not Significant* 
+ - **Interaction:** *Not Significant* 
+```{r}
+AccelNOGO<-lm(muAccel ~ ageRound + cueDum + ageRound*cueDum, dfAV, subset = tType == -0.5)
+mcSummary(AccelNOGO)
+```
+
+***
+
+## Visualizations & Summary
+<p style="font-weight:400; font-size:20px">Accuracy Results Summary</p>
+
+- Across these analyses, age was a consistent predictor of children's accuracy on the box-search task. We found that accuracy increased as age increased in both Go and No-go trials. We did not find any effect of condition on children's accuacy.  
+- Children's accuracy was overall very high (average accuracy ranged from 84% - 99%).   
+
+```{r}
+dfAccplot<-dfAV%>%
+  ungroup()%>%
+  mutate(cueDum=as.factor(cueDum),
+         tType = factor(tType, levels=c(-.5,.5),labels=c("NoGo","Go")))%>%
+  ungroup()%>%
+  mutate(age = ifelse(ageRound==3, '3 (n=18)',
+                   ifelse(ageRound==4, '4 (n=37)',
+                       ifelse(ageRound==5, '5 (n=44)',
+                           ifelse(ageRound==6, '6 (n=27)',
+                                ifelse(ageRound==7, '7 (n=26)', NA))))))
+
+PlotACC <- ggplot(dfAccplot, aes(age, muMaxVelo, fill=cueDum)) + 
+    geom_bar(stat = "identity",position=position_dodge(),color="black", size=.3) + 
+    scale_fill_manual(name="Condition",labels = c("No-Cue", "Cue"),values=c("#4F9CC4", "#e8b63f")) +
+    ggtitle("Velocity by Age and Condition") +
+    #geom_errorbar(aes(ymin=mean-se, ymax=mean + se), width=.2,
+    #              position=position_dodge(.9)) + 
+    mytheme+
+    ylab("Velocity")+
+    xlab("Age")+
+    facet_wrap(~tType)
+PlotACC 
+```
+## Velocity & Acceleration on Partial Reaches 
+
+### Velocity on Partial Reaches
+<p style="font-weight:400; font-size:20px">Question</p>
+Does velocity differ across ages and condition in **partial reach** trials?   
+- Partial reach trials = Accurate No-Go trials where children left the safe zone.
+
+  $\bar{MaxVelo_i}=\beta_0+\beta_1age_i+\beta_3Cue_i+\beta_4age*Cue_i+\epsilon_i$ 
+
+<p style="font-weight:400; font-size:20px">Results</p>
+ - Age: *Not Significant*     
+ - Condition: *Not Significant* 
+- Interaction: *Not Significant* 
+
+```{r}
+dfAVPartial<-dfTrialLevel%>%
+  ungroup()%>%
+  group_by(part_id,trialNum)%>%  
+  mutate(meanaccel = mean(accel),                         # find the mean for each participant's trial (larger = more change)
+         maxVelo = max(velo))%>%                          # find the max velocity for each trial
+  ungroup()%>%
+  group_by(ageRound,tType,acc,szDummyAgg, cueDum)%>%
+  summarise(muMaxVelo = mean(maxVelo),
+            muAccel = mean(accel))%>%
+  ungroup()
+
+PartialVelo<-lm(muMaxVelo~ ageRound + cueDum + ageRound*cueDum, dfAVPartial,subset= tType==-0.5 & szDummyAgg==1 & acc==1)  
+mcSummary(PartialVelo)
+```
+### Acceleration on Partial Reaches
+<p style="font-weight:400; font-size:20px">Question</p>
+Does acceleration differ across ages and condition in **partial reach** trials?   
+- Partial reach trials = Accurate No-Go trials where children left the safe zone.
+
+  $\bar{Accel_i}=\beta_0+\beta_1age_i+\beta_3Cue_i+\beta_4age*Cue_i+\epsilon_i$ 
+
+<p style="font-weight:400; font-size:20px">Results</p>
+ - Age: *Not Significant*     
+ - Condition: *Not Significant* 
+- Interaction: *Not Significant* 
+
+```{r}
+PartialVelo<-lm(muAccel ~ ageRound + cueDum + ageRound*cueDum, dfAVPartial,subset= tType==-0.5 & szDummyAgg==1 & acc==1)  
+mcSummary(PartialVelo)
+```
+
